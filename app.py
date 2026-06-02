@@ -130,12 +130,11 @@ if st.button("🚀 Iniciar Extracción", use_container_width=True):
                     with sync_playwright() as p:
                         navegador = p.chromium.launch(headless=True)
                         
-                        # MEJORA DEFINITIVA: Clonamos exactamente un iPhone 13
-                        dispositivo = p.devices['iPhone 13']
+                        # MEJORA: Monitor gigante de escritorio (evita la censura móvil de Meta)
                         contexto = navegador.new_context(
-                            **dispositivo,
-                            locale='es-ES',
-                            permissions=['geolocation']
+                            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+                            viewport={'width': 1000, 'height': 1200},
+                            locale='es-ES'
                         )
                         pagina = contexto.new_page()
                         
@@ -145,7 +144,8 @@ if st.button("🚀 Iniciar Extracción", use_container_width=True):
                             time.sleep(1) 
                             ad_obj = Ad(anuncio['ad_id'])
                             
-                            formato = 'INSTAGRAM_STANDARD' if 'Instagram' in anuncio.get('adset_name', '') else 'MOBILE_FEED_STANDARD'
+                            # Regresamos a la vista de escritorio para Facebook (donde siempre sale el texto)
+                            formato = 'INSTAGRAM_STANDARD' if 'Instagram' in anuncio.get('adset_name', '') else 'DESKTOP_FEED_STANDARD'
                             previews = ad_obj.get_previews(params={'ad_format': formato})
                             
                             if previews and len(previews) > 0:
@@ -156,16 +156,27 @@ if st.button("🚀 Iniciar Extracción", use_container_width=True):
                                     ruta_archivo = os.path.join(carpeta_temp, f"{nombre_limpio}.png")
                                     
                                     pagina.goto(url_preview)
-                                    pagina.wait_for_timeout(5000)
-                                    
-                                    # Emular el movimiento de un dedo en la pantalla táctil en lugar de un ratón de computadora
-                                    pagina.keyboard.press("PageDown")
-                                    pagina.wait_for_timeout(2000)
-                                    pagina.keyboard.press("PageUp")
                                     pagina.wait_for_timeout(4000)
                                     
-                                    # Tomamos la captura exacta de la pantalla del celular (sin locators, solo la vista actual)
-                                    pagina.screenshot(path=ruta_archivo)
+                                    # Destruir banners de cookies o modales invisibles
+                                    pagina.keyboard.press("Escape")
+                                    pagina.wait_for_timeout(1000)
+                                    
+                                    # Scroll de escritorio para forzar carga de imágenes
+                                    pagina.mouse.wheel(0, 600)
+                                    pagina.wait_for_timeout(2000)
+                                    pagina.mouse.wheel(0, -600)
+                                    pagina.wait_for_timeout(3000)
+                                    
+                                    # Tomamos la foto directo a la caja iframe centrada
+                                    try:
+                                        iframe_elem = pagina.locator('iframe').first
+                                        if iframe_elem.is_visible():
+                                            iframe_elem.screenshot(path=ruta_archivo)
+                                        else:
+                                            pagina.screenshot(path=ruta_archivo)
+                                    except Exception:
+                                        pagina.screenshot(path=ruta_archivo)
                             
                             barra_progreso.progress((indice + 1) / len(anuncios_filtrados))
                             
