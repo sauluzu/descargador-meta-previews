@@ -128,7 +128,13 @@ if st.button("🚀 Iniciar Extracción", use_container_width=True):
                     
                     with sync_playwright() as p:
                         navegador = p.chromium.launch(headless=True)
-                        pagina = navegador.new_page(viewport={'width': 800, 'height': 1200})
+                        
+                        # MEJORA 1: DISFRAZ DE MAC REAL Y TAMAÑO DE CELULAR GRANDE
+                        contexto = navegador.new_context(
+                            user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+                            viewport={'width': 500, 'height': 900}
+                        )
+                        pagina = contexto.new_page()
                         
                         barra_progreso = st.progress(0)
                         
@@ -136,7 +142,8 @@ if st.button("🚀 Iniciar Extracción", use_container_width=True):
                             time.sleep(1) 
                             ad_obj = Ad(anuncio['ad_id'])
                             
-                            formato = 'INSTAGRAM_STANDARD' if 'Instagram' in anuncio.get('adset_name', '') else 'DESKTOP_FEED_STANDARD'
+                            # Usamos versión móvil para ambos para asegurar que quepan perfecto en la foto
+                            formato = 'INSTAGRAM_STANDARD' if 'Instagram' in anuncio.get('adset_name', '') else 'MOBILE_FEED_STANDARD'
                             previews = ad_obj.get_previews(params={'ad_format': formato})
                             
                             if previews and len(previews) > 0:
@@ -146,22 +153,29 @@ if st.button("🚀 Iniciar Extracción", use_container_width=True):
                                     nombre_limpio = "".join([c for c in anuncio['ad_name'] if c.isalnum() or c==' ']).rstrip()
                                     ruta_archivo = os.path.join(carpeta_temp, f"{nombre_limpio}.png")
                                     
-                                    # CORRECCIÓN: Quitamos el "networkidle" y usamos la carga normal
                                     pagina.goto(url_preview)
-                                    # CORRECCIÓN: Damos 10 segundos cerrados de reloj para esquivar el esqueleto
-                                    pagina.wait_for_timeout(10000)
                                     
+                                    # MEJORA 2: COMPORTAMIENTO HUMANO (SCROLL)
+                                    pagina.wait_for_timeout(3000) # Dejamos que cargue lo básico
+                                    pagina.mouse.wheel(0, 800)    # Hacemos scroll hacia abajo para forzar los textos
+                                    pagina.wait_for_timeout(2500) # Damos tiempo a que aparezcan
+                                    pagina.mouse.wheel(0, -800)   # Regresamos arriba
+                                    pagina.wait_for_timeout(4500) # Esperamos a que todo se acomode y se quite el esqueleto
+                                    
+                                    # MEJORA 3: FOTO EXACTA SIN MÁRGENES BLANCOS
                                     try:
-                                        elemento = pagina.query_selector('div#ad-preview-with-mobile-devices')
+                                        # Busca primero el contenedor principal del anuncio
+                                        elemento = pagina.query_selector('div._5pcb') or pagina.query_selector('div#ad-preview-with-mobile-devices')
                                         if elemento:
                                             elemento.screenshot(path=ruta_archivo)
                                         else:
-                                            pagina.screenshot(path=ruta_archivo, full_page=True)
+                                            pagina.screenshot(path=ruta_archivo)
                                     except Exception:
-                                        pagina.screenshot(path=ruta_archivo, full_page=True)
+                                        pagina.screenshot(path=ruta_archivo)
                             
                             barra_progreso.progress((indice + 1) / len(anuncios_filtrados))
                             
+                        contexto.close()
                         navegador.close()
                     
                     nombre_zip = f"Previews_{cuenta_id}_{datetime.now().strftime('%d%m%Y')}.zip"
