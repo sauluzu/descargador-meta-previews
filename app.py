@@ -5,6 +5,7 @@ import re
 import time
 import zipfile
 import shutil
+import html # <--- NUEVA HERRAMIENTA PARA LIMPIAR ENLACES
 from datetime import datetime
 from playwright.sync_api import sync_playwright
 from facebook_business.api import FacebookAdsApi
@@ -128,11 +129,10 @@ if st.button("🚀 Iniciar Extracción", use_container_width=True):
                     
                     with sync_playwright() as p:
                         navegador = p.chromium.launch(headless=True)
-                        
-                        # MEJORA 1: DISFRAZ DE MAC REAL Y TAMAÑO DE CELULAR GRANDE
                         contexto = navegador.new_context(
-                            user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-                            viewport={'width': 500, 'height': 900}
+                            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+                            viewport={'width': 600, 'height': 1200}, # Alto generoso para que quepa todo el texto
+                            extra_http_headers={"Accept-Language": "es-ES,es;q=0.9,en;q=0.8"}
                         )
                         pagina = contexto.new_page()
                         
@@ -142,36 +142,36 @@ if st.button("🚀 Iniciar Extracción", use_container_width=True):
                             time.sleep(1) 
                             ad_obj = Ad(anuncio['ad_id'])
                             
-                            # Usamos versión móvil para ambos para asegurar que quepan perfecto en la foto
                             formato = 'INSTAGRAM_STANDARD' if 'Instagram' in anuncio.get('adset_name', '') else 'MOBILE_FEED_STANDARD'
                             previews = ad_obj.get_previews(params={'ad_format': formato})
                             
                             if previews and len(previews) > 0:
                                 link_extraido = re.search(r'src="([^"]+)"', previews[0]['body'])
                                 if link_extraido:
-                                    url_preview = link_extraido.group(1).replace('&amp;', '&')
+                                    # CORRECCIÓN 1: Desencriptamos el enlace perfectamente
+                                    url_preview = html.unescape(link_extraido.group(1))
                                     nombre_limpio = "".join([c for c in anuncio['ad_name'] if c.isalnum() or c==' ']).rstrip()
                                     ruta_archivo = os.path.join(carpeta_temp, f"{nombre_limpio}.png")
                                     
                                     pagina.goto(url_preview)
+                                    pagina.wait_for_timeout(4000)
                                     
-                                    # MEJORA 2: COMPORTAMIENTO HUMANO (SCROLL)
-                                    pagina.wait_for_timeout(3000) # Dejamos que cargue lo básico
-                                    pagina.mouse.wheel(0, 800)    # Hacemos scroll hacia abajo para forzar los textos
-                                    pagina.wait_for_timeout(2500) # Damos tiempo a que aparezcan
-                                    pagina.mouse.wheel(0, -800)   # Regresamos arriba
-                                    pagina.wait_for_timeout(4500) # Esperamos a que todo se acomode y se quite el esqueleto
+                                    # CORRECCIÓN 2: Forzamos el scroll agresivo con JavaScript para cargar textos e imágenes
+                                    pagina.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+                                    pagina.wait_for_timeout(2500)
+                                    pagina.evaluate("window.scrollTo(0, 0)")
+                                    pagina.wait_for_timeout(3500)
                                     
-                                    # MEJORA 3: FOTO EXACTA SIN MÁRGENES BLANCOS
+                                    # CORRECCIÓN 3: Le tomamos foto SOLO al cuerpo del anuncio, eliminando lo blanco.
                                     try:
-                                        # Busca primero el contenedor principal del anuncio
-                                        elemento = pagina.query_selector('div._5pcb') or pagina.query_selector('div#ad-preview-with-mobile-devices')
-                                        if elemento:
+                                        elemento = pagina.locator('div[role="article"]').first
+                                        if elemento.is_visible():
                                             elemento.screenshot(path=ruta_archivo)
                                         else:
-                                            pagina.screenshot(path=ruta_archivo)
+                                            # Si no encuentra el artículo, le toma foto solo a la caja de contenido, no a la ventana
+                                            pagina.locator('body').screenshot(path=ruta_archivo)
                                     except Exception:
-                                        pagina.screenshot(path=ruta_archivo)
+                                        pagina.locator('body').screenshot(path=ruta_archivo)
                             
                             barra_progreso.progress((indice + 1) / len(anuncios_filtrados))
                             
