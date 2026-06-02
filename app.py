@@ -1,11 +1,9 @@
 import streamlit as st
 import os
 os.system("playwright install chromium")
-import re
 import time
 import zipfile
 import shutil
-import html
 from datetime import datetime
 from playwright.sync_api import sync_playwright
 from facebook_business.api import FacebookAdsApi
@@ -85,7 +83,7 @@ if st.button("🚀 Iniciar Extracción", use_container_width=True):
     elif fecha_inicio > fecha_fin:
         st.error("⚠️ La fecha de inicio no puede ser posterior a la fecha de fin.")
     else:
-        with st.spinner("Analizando rendimiento y tomando fotos... Esto puede tomar varios minutos."):
+        with st.spinner("Construyendo panel de previsualización y tomando fotos..."):
             try:
                 cuenta = AdAccount(cuenta_id)
                 
@@ -120,7 +118,7 @@ if st.button("🚀 Iniciar Extracción", use_container_width=True):
                 if len(anuncios_filtrados) == 0:
                     st.warning("No se encontraron anuncios que cumplan con todos los filtros y >0 impresiones.")
                 else:
-                    st.info(f"✅ Se encontraron {len(anuncios_filtrados)} anuncios válidos. Tomando fotografías...")
+                    st.info(f"✅ Se encontraron {len(anuncios_filtrados)} anuncios válidos. Extrayendo gráficos...")
                     
                     carpeta_temp = "temp_imagenes"
                     if os.path.exists(carpeta_temp):
@@ -130,10 +128,10 @@ if st.button("🚀 Iniciar Extracción", use_container_width=True):
                     with sync_playwright() as p:
                         navegador = p.chromium.launch(headless=True)
                         
-                        # MEJORA: Monitor gigante de escritorio (evita la censura móvil de Meta)
+                        # Creamos un navegador de escritorio normal pero con espacio holgado
                         contexto = navegador.new_context(
                             user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-                            viewport={'width': 1000, 'height': 1200},
+                            viewport={'width': 800, 'height': 1200},
                             locale='es-ES'
                         )
                         pagina = contexto.new_page()
@@ -144,39 +142,39 @@ if st.button("🚀 Iniciar Extracción", use_container_width=True):
                             time.sleep(1) 
                             ad_obj = Ad(anuncio['ad_id'])
                             
-                            # Regresamos a la vista de escritorio para Facebook (donde siempre sale el texto)
-                            formato = 'INSTAGRAM_STANDARD' if 'Instagram' in anuncio.get('adset_name', '') else 'DESKTOP_FEED_STANDARD'
+                            formato = 'INSTAGRAM_STANDARD' if 'Instagram' in anuncio.get('adset_name', '') else 'MOBILE_FEED_STANDARD'
                             previews = ad_obj.get_previews(params={'ad_format': formato})
                             
                             if previews and len(previews) > 0:
-                                link_extraido = re.search(r'src="([^"]+)"', previews[0]['body'])
-                                if link_extraido:
-                                    url_preview = html.unescape(link_extraido.group(1))
-                                    nombre_limpio = "".join([c for c in anuncio['ad_name'] if c.isalnum() or c==' ']).rstrip()
-                                    ruta_archivo = os.path.join(carpeta_temp, f"{nombre_limpio}.png")
-                                    
-                                    pagina.goto(url_preview)
-                                    pagina.wait_for_timeout(4000)
-                                    
-                                    # Destruir banners de cookies o modales invisibles
-                                    pagina.keyboard.press("Escape")
-                                    pagina.wait_for_timeout(1000)
-                                    
-                                    # Scroll de escritorio para forzar carga de imágenes
-                                    pagina.mouse.wheel(0, 600)
-                                    pagina.wait_for_timeout(2000)
-                                    pagina.mouse.wheel(0, -600)
-                                    pagina.wait_for_timeout(3000)
-                                    
-                                    # Tomamos la foto directo a la caja iframe centrada
-                                    try:
-                                        iframe_elem = pagina.locator('iframe').first
-                                        if iframe_elem.is_visible():
-                                            iframe_elem.screenshot(path=ruta_archivo)
-                                        else:
-                                            pagina.screenshot(path=ruta_archivo)
-                                    except Exception:
-                                        pagina.screenshot(path=ruta_archivo)
+                                # ¡AQUÍ ESTÁ LA MAGIA! Tomamos el iframe completo que nos da Meta
+                                cuerpo_iframe = previews[0]['body']
+                                nombre_limpio = "".join([c for c in anuncio['ad_name'] if c.isalnum() or c==' ']).rstrip()
+                                ruta_archivo = os.path.join(carpeta_temp, f"{nombre_limpio}.png")
+                                
+                                # Creamos una página web al vuelo con una "caja" perfecta de 400x850 (tamaño celular)
+                                html_magico = f"""
+                                <!DOCTYPE html>
+                                <html>
+                                <head><meta charset="utf-8"></head>
+                                <body style="margin: 0; padding: 20px; display: flex; justify-content: center; background: #ffffff;">
+                                    <div id="caja-anuncio" style="width: 400px; height: 850px; overflow: hidden; box-shadow: 0 4px 12px rgba(0,0,0,0.1); border-radius: 12px;">
+                                        {cuerpo_iframe}
+                                    </div>
+                                </body>
+                                </html>
+                                """
+                                
+                                # Le inyectamos esta página al navegador fantasma
+                                pagina.set_content(html_magico)
+                                
+                                # Le damos 8 segundos pacientemente para que el iframe interno de Meta descargue todo
+                                pagina.wait_for_timeout(8000)
+                                
+                                # Le tomamos foto EXCLUSIVAMENTE a nuestra "caja-anuncio"
+                                try:
+                                    pagina.locator('#caja-anuncio').screenshot(path=ruta_archivo)
+                                except Exception:
+                                    pagina.screenshot(path=ruta_archivo)
                             
                             barra_progreso.progress((indice + 1) / len(anuncios_filtrados))
                             
