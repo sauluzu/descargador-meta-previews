@@ -1,5 +1,6 @@
 import streamlit as st
 import os
+os.system("playwright install chromium")
 import re
 import time
 import zipfile
