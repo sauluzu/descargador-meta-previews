@@ -128,7 +128,8 @@ if st.button("🚀 Iniciar Extracción", use_container_width=True):
                     
                     with sync_playwright() as p:
                         navegador = p.chromium.launch(headless=True)
-                        pagina = navegador.new_page(viewport={'width': 320, 'height': 600})
+                        # AJUSTE 1: Ventana más alta y ancha para que no corte los textos de Instagram
+                        pagina = navegador.new_page(viewport={'width': 800, 'height': 1200})
                         
                         barra_progreso = st.progress(0)
                         
@@ -146,17 +147,19 @@ if st.button("🚀 Iniciar Extracción", use_container_width=True):
                                     nombre_limpio = "".join([c for c in anuncio['ad_name'] if c.isalnum() or c==' ']).rstrip()
                                     ruta_archivo = os.path.join(carpeta_temp, f"{nombre_limpio}.png")
                                     
-                                    pagina.goto(url_preview)
-                                    pagina.wait_for_timeout(4000)
+                                    # AJUSTE 2: Esperar pacientemente a que la red deje de transferir datos
+                                    pagina.goto(url_preview, wait_until='networkidle')
+                                    # AJUSTE 3: Dar 8 segundos de tolerancia extra para que Meta quite la pantalla de carga
+                                    pagina.wait_for_timeout(8000)
                                     
                                     try:
                                         elemento = pagina.query_selector('div#ad-preview-with-mobile-devices')
                                         if elemento:
                                             elemento.screenshot(path=ruta_archivo)
                                         else:
-                                            pagina.screenshot(path=ruta_archivo)
+                                            pagina.screenshot(path=ruta_archivo, full_page=True)
                                     except Exception:
-                                        pagina.screenshot(path=ruta_archivo)
+                                        pagina.screenshot(path=ruta_archivo, full_page=True)
                             
                             barra_progreso.progress((indice + 1) / len(anuncios_filtrados))
                             
