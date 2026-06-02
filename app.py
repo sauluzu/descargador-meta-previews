@@ -40,7 +40,7 @@ def obtener_mis_cuentas():
             id_cuenta = c.get('account_id')
             diccionario[f"{nombre} (act_{id_cuenta})"] = f"act_{id_cuenta}"
         return diccionario
-    except Exception as e:
+    except Exception:
         return {}
 
 cuentas_disponibles = obtener_mis_cuentas()
@@ -65,8 +65,6 @@ with col2:
     palabra_conjunto = st.selectbox("Filtro del Conjunto de Anuncios", ["Facebook", "Instagram"])
 
 st.divider()
-
-# --- CAMBIO APLICADO AQUÍ: FECHAS OBLIGATORIAS ---
 st.header("2. Rango de Tiempo")
 st.markdown("Selecciona el periodo exacto que deseas evaluar:")
 
@@ -90,7 +88,6 @@ if st.button("🚀 Iniciar Extracción", use_container_width=True):
             try:
                 cuenta = AdAccount(cuenta_id)
                 
-                # --- CAMBIO APLICADO AQUÍ: MOTOR ADAPTADO ---
                 parametros_busqueda = {
                     'level': 'ad',
                     'time_range': {
@@ -120,7 +117,7 @@ if st.button("🚀 Iniciar Extracción", use_container_width=True):
                         anuncios_filtrados.append(item)
 
                 if len(anuncios_filtrados) == 0:
-                    st.warning("No se encontraron anuncios que cumplan con todos los filtros y tengan >0 impresiones en ese periodo.")
+                    st.warning("No se encontraron anuncios que cumplan con todos los filtros y >0 impresiones.")
                 else:
                     st.info(f"✅ Se encontraron {len(anuncios_filtrados)} anuncios válidos. Tomando fotografías...")
                     
@@ -154,3 +151,33 @@ if st.button("🚀 Iniciar Extracción", use_container_width=True):
                                     
                                     try:
                                         elemento = pagina.query_selector('div#ad-preview-with-mobile-devices')
+                                        if elemento:
+                                            elemento.screenshot(path=ruta_archivo)
+                                        else:
+                                            pagina.screenshot(path=ruta_archivo)
+                                    except Exception:
+                                        pagina.screenshot(path=ruta_archivo)
+                            
+                            barra_progreso.progress((indice + 1) / len(anuncios_filtrados))
+                            
+                        navegador.close()
+                    
+                    nombre_zip = f"Previews_{cuenta_id}_{datetime.now().strftime('%d%m%Y')}.zip"
+                    with zipfile.ZipFile(nombre_zip, 'w', zipfile.ZIP_DEFLATED) as zipf:
+                        for root, dirs, files in os.walk(carpeta_temp):
+                            for file in files:
+                                zipf.write(os.path.join(root, file), file)
+                                
+                    shutil.rmtree(carpeta_temp)
+                    st.success("🎉 ¡Proceso finalizado con éxito!")
+                    
+                    with open(nombre_zip, "rb") as fp:
+                        btn = st.download_button(
+                            label="⬇️ Descargar archivo ZIP",
+                            data=fp,
+                            file_name=nombre_zip,
+                            mime="application/zip"
+                        )
+
+            except Exception as e:
+                st.error(f"Algo falló. Detalle técnico: {e}")
