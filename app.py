@@ -5,7 +5,7 @@ import re
 import time
 import zipfile
 import shutil
-import html # <--- NUEVA HERRAMIENTA PARA LIMPIAR ENLACES
+import html
 from datetime import datetime
 from playwright.sync_api import sync_playwright
 from facebook_business.api import FacebookAdsApi
@@ -129,10 +129,13 @@ if st.button("🚀 Iniciar Extracción", use_container_width=True):
                     
                     with sync_playwright() as p:
                         navegador = p.chromium.launch(headless=True)
+                        
+                        # MEJORA DEFINITIVA: Clonamos exactamente un iPhone 13
+                        dispositivo = p.devices['iPhone 13']
                         contexto = navegador.new_context(
-                            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-                            viewport={'width': 600, 'height': 1200}, # Alto generoso para que quepa todo el texto
-                            extra_http_headers={"Accept-Language": "es-ES,es;q=0.9,en;q=0.8"}
+                            **dispositivo,
+                            locale='es-ES',
+                            permissions=['geolocation']
                         )
                         pagina = contexto.new_page()
                         
@@ -148,30 +151,21 @@ if st.button("🚀 Iniciar Extracción", use_container_width=True):
                             if previews and len(previews) > 0:
                                 link_extraido = re.search(r'src="([^"]+)"', previews[0]['body'])
                                 if link_extraido:
-                                    # CORRECCIÓN 1: Desencriptamos el enlace perfectamente
                                     url_preview = html.unescape(link_extraido.group(1))
                                     nombre_limpio = "".join([c for c in anuncio['ad_name'] if c.isalnum() or c==' ']).rstrip()
                                     ruta_archivo = os.path.join(carpeta_temp, f"{nombre_limpio}.png")
                                     
                                     pagina.goto(url_preview)
+                                    pagina.wait_for_timeout(5000)
+                                    
+                                    # Emular el movimiento de un dedo en la pantalla táctil en lugar de un ratón de computadora
+                                    pagina.keyboard.press("PageDown")
+                                    pagina.wait_for_timeout(2000)
+                                    pagina.keyboard.press("PageUp")
                                     pagina.wait_for_timeout(4000)
                                     
-                                    # CORRECCIÓN 2: Forzamos el scroll agresivo con JavaScript para cargar textos e imágenes
-                                    pagina.evaluate("window.scrollTo(0, document.body.scrollHeight)")
-                                    pagina.wait_for_timeout(2500)
-                                    pagina.evaluate("window.scrollTo(0, 0)")
-                                    pagina.wait_for_timeout(3500)
-                                    
-                                    # CORRECCIÓN 3: Le tomamos foto SOLO al cuerpo del anuncio, eliminando lo blanco.
-                                    try:
-                                        elemento = pagina.locator('div[role="article"]').first
-                                        if elemento.is_visible():
-                                            elemento.screenshot(path=ruta_archivo)
-                                        else:
-                                            # Si no encuentra el artículo, le toma foto solo a la caja de contenido, no a la ventana
-                                            pagina.locator('body').screenshot(path=ruta_archivo)
-                                    except Exception:
-                                        pagina.locator('body').screenshot(path=ruta_archivo)
+                                    # Tomamos la captura exacta de la pantalla del celular (sin locators, solo la vista actual)
+                                    pagina.screenshot(path=ruta_archivo)
                             
                             barra_progreso.progress((indice + 1) / len(anuncios_filtrados))
                             
